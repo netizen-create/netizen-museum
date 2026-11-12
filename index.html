@@ -1,0 +1,419 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>
+<title>Цифровой музей NETIZEN</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geologica:wght@300;400;600;700;800;900&family=JetBrains+Mono:wght@400;500&family=Pixelify+Sans:wght@400&display=swap">
+<link rel="preload" href="museum/fonts/FeatureMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="museum/fonts/FeatureMono-Medium.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+  /* Интерфейс поверх сцены набран Feature Mono, как квиз и админка NETIZEN. Файлы урезаны до латиницы и кириллицы, ~30 КБ каждый.
+     Geologica и JetBrains Mono остаются для надписей внутри залов (этикетки, автоматы рисуются на холстах). */
+  @font-face { font-family: "Feature Mono"; src: url("museum/fonts/FeatureMono-Regular.woff2") format("woff2"); font-weight: 100 400; font-display: swap; }
+  @font-face { font-family: "Feature Mono"; src: url("museum/fonts/FeatureMono-Medium.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+  @font-face { font-family: "Feature Mono"; src: url("museum/fonts/FeatureMono-Bold.woff2") format("woff2"); font-weight: 600 900; font-display: swap; }
+  /* Лист этикетки поверх тёмной сцены: интерфейс почти исчезает, цвет ссылки остаётся единственным акцентом */
+  :root {
+    --void: #07080a;
+    --glass: rgba(10, 11, 14, .62);
+    --line: rgba(236, 233, 226, .16);
+    --paper: #ece9e2;
+    --dim: #a3a199;
+    --link: #2f5bff;
+    --sans: "Feature Mono", ui-monospace, monospace;
+    --mono: "Feature Mono", ui-monospace, monospace;
+    --gut-l: max(16px, env(safe-area-inset-left, 0px));
+    --gut-r: max(16px, env(safe-area-inset-right, 0px));
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--void); color: var(--paper); font-family: var(--sans); overflow: hidden; overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
+  #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; opacity: 0; transition: opacity .7s; cursor: grab; }
+  #view.drawing { cursor: crosshair; }
+  body.ready #view { opacity: 1; }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; font: 400 13px var(--mono); color: var(--dim); }
+  body.ready #loading { display: none; }
+  #vig { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 58%, rgba(0, 0, 0, .34)); }
+  #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity .3s; z-index: 5; }
+  #fade.on { opacity: 1; }
+  /* Бэкрумс: счётчик, кнопка выхода, джойстик на телефоне, затемнение по краям, экран поимки и победы. */
+  #br { display: none; }
+  body.br #br { display: block; }
+  body.br #tools, body.br #cap, body.br #hint, body.br #mark { display: none !important; }
+  #brTop { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 16px); transform: translateX(-50%); z-index: 3; display: flex; gap: 14px; padding: 9px 18px; border-radius: 24px; background: var(--glass); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); color: #f4f1e8; font-size: 13px; font-weight: 600; letter-spacing: .02em; white-space: nowrap; }
+  #brTime { opacity: .7; font-variant-numeric: tabular-nums; }
+  #brQuit { position: fixed; right: 16px; top: calc(env(safe-area-inset-top, 0px) + 16px); z-index: 3; padding: 9px 16px; border-radius: 24px; border: 0; background: var(--glass); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); color: #f4f1e8; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+  #brRun { display: none; }
+  @media (pointer: coarse) {
+    #brRun { display: block; position: fixed; right: 24px; bottom: calc(env(safe-area-inset-bottom, 0px) + 56px); width: 76px; height: 76px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .18); background: rgba(10, 11, 14, .5); color: #f4f1e8; font: inherit; font-size: 13px; font-weight: 600; z-index: 3; }
+    #brRun.on { background: #f4f1e8; color: #111; }
+    #brTop { left: var(--gut-l); transform: none; }
+  }
+  /* Общая стена: редактор поверх сцены, клетки крупно, палитра и кнопка снизу. */
+  #px { position: fixed; inset: 0; z-index: 6; display: flex; flex-direction: column; background: #101115; }
+  body.pxOn #tools, body.pxOn #cap, body.pxOn #hint, body.pxOn #top { display: none !important; }
+  #pxTop { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: calc(env(safe-area-inset-top, 0px) + 12px) var(--gut-r) 10px var(--gut-l); }
+  #pxTop b { display: block; font-size: 14px; font-weight: 600; }
+  #pxInfo { display: block; font-size: 12px; color: var(--dim); margin-top: 2px; font-variant-numeric: tabular-nums; }
+  #pxX { width: 40px; height: 40px; flex: none; border-radius: 50%; border: 1px solid var(--line); background: var(--glass); color: var(--paper); font: 400 22px var(--sans); cursor: pointer; }
+  #pxCv { flex: 1; min-height: 0; width: 100%; touch-action: none; cursor: crosshair; }
+  #pxZoom { position: absolute; right: var(--gut-r); top: calc(env(safe-area-inset-top, 0px) + 70px); display: flex; flex-direction: column; gap: 8px; }
+  #pxZoom button { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--glass); color: var(--paper); font: 500 20px var(--sans); cursor: pointer; }
+  #pxBar { padding: 10px var(--gut-r) calc(env(safe-area-inset-bottom, 0px) + 14px) var(--gut-l); display: grid; gap: 10px; background: rgba(10, 11, 14, .9); border-top: 1px solid var(--line); }
+  #pxHint { margin: 0; font-size: 12px; color: var(--dim); min-height: 15px; }
+  #pxPal { display: grid; grid-template-columns: repeat(16, minmax(0, 34px)); justify-content: center; gap: 5px; }
+  @media (max-width: 600px) { #pxPal { grid-template-columns: repeat(8, 1fr); } }
+  #pxPal button { aspect-ratio: 1; min-height: 26px; border-radius: 6px; border: 2px solid rgba(255, 255, 255, .12); background: var(--c); cursor: pointer; padding: 0; }
+  #pxPal button[aria-pressed="true"] { border-color: #fff; box-shadow: 0 0 0 2px #111 inset; }
+  #pxGo { width: 100%; max-width: 420px; justify-self: center; height: 46px; border-radius: 23px; border: 0; background: #7af7d6; color: #0b1512; font: 600 15px var(--sans); cursor: pointer; }
+  #pxGo:disabled { background: #2a2d33; color: #6f7279; cursor: default; }
+  #brVig { position: fixed; inset: 0; pointer-events: none; z-index: 2; opacity: 0; background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 45%, rgba(40, 0, 0, .85) 100%); }
+  #brEnd { position: fixed; inset: 0; z-index: 4; display: grid; place-items: center; background: rgba(8, 7, 4, .78); }
+  #brEnd[hidden] { display: none; }
+  #brFace { position: absolute; width: min(70vw, 70vh); opacity: 0; pointer-events: none; }
+  #brEnd.lose #brFace { animation: brFace 1.4s ease-out forwards; }
+  @keyframes brFace { 0% { opacity: 1; transform: scale(2.4); } 30% { opacity: 1; transform: scale(1.6); } 100% { opacity: .14; transform: scale(1.1); } }
+  #brBox { position: relative; max-width: min(360px, calc(100vw - 32px)); padding: 26px 24px; border-radius: 22px; background: var(--glass); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); color: #f4f1e8; text-align: center; opacity: 0; animation: brIn .4s ease-out .9s forwards; }
+  #brEnd.win #brBox { animation-delay: .1s; }
+  @keyframes brIn { to { opacity: 1; } }
+  #brBox h2 { margin: 0 0 8px; font-size: 22px; }
+  #brBox p { margin: 0 0 18px; font-size: 14px; opacity: .8; line-height: 1.4; }
+  #brAct { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  /* Выбор сложности при входе в лабиринт: правила, управление и три кнопки. */
+  #brPick { position: fixed; inset: 0; z-index: 4; display: grid; place-items: center; padding: 16px var(--gut-r) 16px var(--gut-l); background: rgba(8, 7, 4, .66); overflow: auto; }
+  #brPick[hidden] { display: none; }
+  .brCard { max-width: 420px; padding: 24px 22px; border-radius: 22px; background: var(--glass); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); color: #f4f1e8; animation: brIn .3s ease-out both; opacity: 0; }
+  .brCard h2 { margin: 0 0 10px; font-size: 20px; }
+  .brCard p { margin: 0 0 12px; font-size: 13px; line-height: 1.5; opacity: .85; }
+  #brKeys { opacity: .6 !important; }
+  #brModes { display: grid; gap: 8px; margin: 16px 0 12px; }
+  #brModes button { display: grid; gap: 3px; text-align: left; padding: 12px 16px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, .14); border-left: 4px solid var(--c); background: rgba(255, 255, 255, .06); color: #f4f1e8; font: inherit; cursor: pointer; }
+  #brModes button:hover { background: rgba(255, 255, 255, .12); }
+  #brModes b { font-size: 15px; font-weight: 600; }
+  #brModes span { font-size: 12px; opacity: .7; }
+  #brBack { width: 100%; padding: 11px 18px; border-radius: 22px; border: 0; background: rgba(255, 255, 255, .1); color: #f4f1e8; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  #brAct button { padding: 11px 18px; border-radius: 22px; border: 0; background: #f4f1e8; color: #111; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  #brAct button.alt { background: rgba(255, 255, 255, .12); color: #f4f1e8; }
+
+  .hud { position: fixed; display: flex; align-items: center; gap: 8px; z-index: 3; }
+  #top { top: calc(env(safe-area-inset-top, 0px) + 12px); left: var(--gut-l); right: var(--gut-r); justify-content: space-between; align-items: flex-start; pointer-events: none; gap: 12px; }
+  #top > * { pointer-events: auto; }
+  #mark { font-weight: 600; font-size: 12px; letter-spacing: .02em; pointer-events: none; min-width: 0; padding: 9px 18px; border-radius: 24px; background: var(--glass); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border: 1px solid var(--line); }
+  #hallName { display: block; font: 400 12px var(--sans); color: var(--dim); margin-top: 1px; }
+  #hallName .fresh { margin-left: 6px; padding: 1px 6px; border-radius: 2px; background: #47c55e; color: #0b0c0d; font: 500 10px var(--mono, ui-monospace, monospace); text-transform: uppercase; letter-spacing: .04em; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+  .round { position: relative; width: 52px; height: 52px; display: grid; place-items: center; flex: none; border-radius: 50%; background: var(--glass); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border: 1px solid var(--line); }
+  .round svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  #snd.off .wave { display: none; }
+  #snd .mute { display: none; }
+  #snd.off .mute { display: inline; }
+  #mapN { position: absolute; right: -2px; bottom: -3px; min-width: 22px; height: 22px; padding: 0 6px; box-sizing: border-box; display: grid; place-items: center; border-radius: 11px; background: #15161a; color: #7bff8c; font: 500 12px var(--mono); border: 1px solid var(--line); }
+  #draw[aria-pressed="true"] { background: var(--paper); color: #111; }
+  #tools { left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); gap: 12px; }
+  #palette { left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 80px); background: var(--glass); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border: 1px solid var(--line); border-radius: 26px; padding: 8px; gap: 6px; }
+  #palette button { width: 32px; height: 32px; border-radius: 50%; background: var(--c); border: 2px solid transparent; }
+  #palette button[aria-pressed="true"] { border-color: var(--paper); }
+  #palette .rub { background: repeating-conic-gradient(#777 0 25%, #ddd 0 50%) 50% / 12px 12px; }
+
+  #cap { left: 50%; transform: translate(-50%, 10px); bottom: calc(env(safe-area-inset-bottom, 0px) + 82px); max-width: min(420px, calc(100vw - 32px)); display: block; text-align: left; padding: 10px 18px; background: var(--glass); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border: 1px solid var(--line); border-radius: 24px; opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; }
+  #cap.on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  #capT { display: block; font-weight: 600; font-size: 14px; text-wrap: balance; }
+  #capA { display: block; font: 400 12px var(--mono); color: var(--dim); margin-top: 3px; }
+
+  #say { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 150px); width: max-content; max-width: min(520px, calc(100vw - 32px)); z-index: 4; text-align: center; padding: 12px 20px; background: rgba(5, 6, 8, .78); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border-radius: 24px; opacity: 0; visibility: hidden; transition: opacity .2s, visibility .2s; pointer-events: none; }
+  #say.on { opacity: 1; visibility: visible; }
+  #sayName { display: block; font: 500 12px var(--mono); color: var(--dim); margin-bottom: 3px; }
+  #sayLine { font-size: 16px; line-height: 1.35; }
+
+  #hint { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 74px); transform: translateX(-50%); z-index: 2; display: flex; align-items: center; gap: 12px; font-size: 14px; color: #fff; background: rgba(40, 40, 44, .56); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); padding: 6px 8px 6px 18px; border-radius: 26px; transition: opacity .5s, visibility .5s; width: max-content; max-width: calc(100vw - 32px); }
+  #hint svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  #hint.off { opacity: 0; visibility: hidden; }
+  /* Захваченная мышь: точка прицела в центре, нажатие срабатывает по ней. */
+  #cross { display: none; position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .45); z-index: 3; pointer-events: none; }
+  body.locked #cross { display: block; }
+  body.locked #view { cursor: none; }
+  /* Как в oncyber: подсказка у курсора до захвата, а пока мышь захвачена, интерфейс прячется и сверху одна строка, как вернуть курсор. */
+  #lookTip { position: fixed; left: 0; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px; padding: 7px 14px 7px 10px; border-radius: 20px; background: rgba(40, 40, 44, .62); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); color: #fff; font-size: 12px; white-space: nowrap; pointer-events: none; }
+  #lookTip i { width: 8px; height: 8px; border-radius: 50%; background: #fff; }
+  #lockBar { display: none; position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 16px); transform: translateX(-50%); z-index: 3; padding: 9px 18px; border-radius: 22px; background: rgba(40, 40, 44, .56); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); color: #fff; font-size: 13px; white-space: nowrap; pointer-events: none; }
+  body.locked #lockBar { display: block; }
+  body.locked #top, body.locked #tools, body.locked #hint { visibility: hidden; }
+  body.br.locked #lockBar { display: none; }
+  /* Джойстик на телефоне: слева над нижними кнопками. Подписи и реплики поднимаются выше, чтобы его не закрывать. */
+  #joy { display: none; }
+  @media (pointer: coarse) {
+    #joy { display: grid; place-items: center; position: fixed; left: var(--gut-l); bottom: calc(env(safe-area-inset-bottom, 0px) + 90px); width: 116px; height: 116px; border-radius: 50%; background: rgba(10, 11, 14, .32); border: 1px solid rgba(255, 255, 255, .2); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); z-index: 3; touch-action: none; }
+    #joy i { width: 48px; height: 48px; border-radius: 50%; background: rgba(244, 241, 232, .82); pointer-events: none; }
+    body.br #joy { bottom: calc(env(safe-area-inset-bottom, 0px) + 28px); }
+    body.focusing #joy, body.pxOn #joy { display: none; }
+    #cap { bottom: calc(env(safe-area-inset-bottom, 0px) + 224px) !important; }
+    #say { bottom: calc(env(safe-area-inset-bottom, 0px) + 290px) !important; }
+  }
+  #hintX { width: 36px; height: 36px; flex: none; display: grid; place-items: center; }
+  #toast { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 74px); transform: translate(-50%, -8px); z-index: 4; background: var(--paper); color: #141414; padding: 10px 18px; border-radius: 24px; font-size: 14px; width: max-content; max-width: calc(100vw - 32px); text-wrap: balance; text-align: center; opacity: 0; visibility: hidden; transition: opacity .3s, transform .3s, visibility .3s; pointer-events: none; }
+  #toast.on { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
+  #toast small { display: block; font: 400 12px var(--mono); margin-top: 2px; }
+
+  #sheet { position: fixed; inset: 0; z-index: 6; background: rgba(5, 6, 8, .6); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); display: grid; place-items: center; padding-block: calc(env(safe-area-inset-top, 0px) + 66px) calc(env(safe-area-inset-bottom, 0px) + 24px); padding-left: var(--gut-l); padding-right: var(--gut-r); overflow: auto; -webkit-user-select: text; user-select: text; }
+  #sBody { width: 100%; max-width: 1000px; box-sizing: border-box; }
+  #sBody.panel { max-width: 480px; padding: 28px; border-radius: 28px; background: rgba(16, 17, 21, .78); border: 1px solid var(--line); }
+  #sBody.panel.wide { max-width: 640px; }
+  #sBody h2 { font-weight: 700; font-size: clamp(22px, 3vw, 32px); line-height: 1.14; margin: 0 0 8px; text-wrap: balance; }
+  .tech { font: 400 12px var(--mono); color: var(--dim); margin: 4px 0 18px; }
+  .txt { font-size: 16px; line-height: 1.5; font-weight: 300; margin: 0 0 16px; max-width: 46ch; }
+  .note { font: 400 12px var(--mono); color: var(--dim); margin: 0 0 16px; }
+  .eye { font: 500 12px var(--mono); color: var(--dim); margin: 0 0 8px; }
+  .field { display: flex; gap: 8px; }
+  .field input { flex: 1; min-width: 0; height: 44px; box-sizing: border-box; background: rgba(255, 255, 255, .08); color: var(--paper); border: 1px solid var(--line); border-radius: 22px; padding: 0 16px; font: 400 16px var(--sans); }
+  .btn { min-height: 44px; padding: 0 20px; background: var(--paper); color: #111; border-radius: 22px; font-size: 14px; font-weight: 600; }
+
+  #sBody.game { -webkit-user-select: none; user-select: none; }
+
+  /* Змейка: своя карманная консоль, тёплый пластик, LCD и кнопки под большой палец */
+  #sBody.pocketWrap { max-width: min(400px, 100%); }
+  .pocket { position: relative; box-sizing: border-box; padding: 16px 16px 20px; border-radius: 22px 22px 56px 22px; background: linear-gradient(160deg, #e2dfc8, #bdb99b); box-shadow: inset 0 2px 0 rgba(255, 255, 255, .6), inset 0 -6px 0 rgba(70, 66, 40, .28), 0 24px 70px rgba(0, 0, 0, .6); }
+  .pocketBezel { padding: 16px 16px 8px; border-radius: 12px 12px 34px 12px; background: #2e3129; box-shadow: inset 0 0 0 2px #1c1e19; }
+  .lcd { display: block; width: 100%; height: auto; max-height: calc(100vh - 330px); object-fit: contain; image-rendering: pixelated; touch-action: none; background: #cadc9f; box-shadow: inset 0 0 12px rgba(15, 56, 15, .5); }
+  .pocketBrand { margin: 7px 0 0; text-align: center; font: 400 14px "Pixelify Sans", var(--sans); letter-spacing: .14em; color: #9aa085; }
+  .pocketPad { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 12px 0; }
+  .dpad { position: relative; width: 132px; height: 132px; flex: none; }
+  .dpad::before { content: ""; position: absolute; left: 46px; top: 46px; width: 40px; height: 40px; background: #24261f; }
+  .dpad button { position: absolute; width: 44px; height: 46px; background: #24261f; box-shadow: inset 0 2px 0 #4a4d42, 0 3px 0 #0f100c; touch-action: none; }
+  .dpad button:active { background: #3b3e33; transform: translateY(1px); }
+  .dU { left: 44px; top: 0; border-radius: 8px 8px 0 0; }
+  .dD { left: 44px; bottom: 0; border-radius: 0 0 8px 8px; }
+  .dL { left: 0; top: 44px; width: 46px !important; height: 44px !important; border-radius: 8px 0 0 8px; }
+  .dR { right: 0; top: 44px; width: 46px !important; height: 44px !important; border-radius: 0 8px 8px 0; }
+  .grille { width: 48px; height: 40px; flex: none; background: repeating-linear-gradient(115deg, transparent 0 7px, rgba(50, 46, 26, .5) 7px 11px); }
+  .aBtn { width: 72px; height: 72px; flex: none; border-radius: 50%; background: radial-gradient(circle at 36% 30%, #b4d43a, #6c8c0c); color: #24320a; font: 400 28px "Pixelify Sans", var(--sans); box-shadow: 0 4px 0 #3e520a, 0 8px 14px rgba(0, 0, 0, .3); touch-action: none; }
+  .aBtn:active { transform: translateY(2px); box-shadow: 0 2px 0 #3e520a; }
+
+  /* Пинбол: стекло с табло и стол в хроме */
+  #sBody.pinWrap { max-width: min(980px, 100%); }
+  .pinRoom { display: flex; align-items: center; justify-content: center; gap: 22px; }
+  .pinSide { flex: 1 1 0; min-width: 0; max-width: 480px; }
+  .glass { display: block; width: 100%; height: auto; border-radius: 8px; box-shadow: 0 0 0 2px #c8cedb, 0 0 0 5px #14101f, 0 0 46px rgba(255, 46, 154, .4); }
+  .table { display: block; flex: none; width: auto; height: auto; max-width: 100%; max-height: calc(100vh - 96px); border-radius: 26px 26px 8px 8px; box-shadow: 0 0 0 3px #c8cedb, 0 0 0 7px #14101f, 0 24px 70px rgba(0, 0, 0, .6); touch-action: none; }
+  .arcTip { margin: 16px 0 0; font-size: 13px; color: var(--dim); text-align: center; }
+
+  /* Файрвол: корпус в углях, поле за раскалённой рамкой */
+  #sBody.fireWrap, #sBody.virusWrap, #sBody.loadWrap { max-width: min(440px, 100%); margin: 0 auto; }
+  .fireBox { padding: 10px; border-radius: 18px; background: linear-gradient(160deg, #3a1208, #120504); box-shadow: 0 0 0 2px #ff5a1f, 0 0 44px rgba(255, 90, 31, .45), 0 24px 70px rgba(0, 0, 0, .6); }
+  .fireCv, .virusCv, .loadCv { display: block; width: auto; height: auto; max-width: 100%; margin: 0 auto; touch-action: none; }
+  .fireCv { max-height: calc(100vh - 175px); border-radius: 10px; }
+  /* Антивирус: окно девяностых на бирюзовом рабочем столе */
+  .virusBox { padding: 14px; border-radius: 6px; background: #138a8a; box-shadow: 0 24px 70px rgba(0, 0, 0, .6); }
+  .virusCv { max-height: calc(100vh - 240px); }
+  .virusRow { display: flex; justify-content: center; margin-top: 12px; }
+  .virusFlag { min-height: 44px; padding: 0 18px; background: #c3c3c3; color: #111; font: 400 17px "Pixelify Sans", var(--sans); box-shadow: inset -2px -2px 0 #7b7b7b, inset 2px 2px 0 #fff; }
+  .virusFlag.on { background: #ffd23f; box-shadow: inset 2px 2px 0 #7b7b7b, inset -2px -2px 0 #fff; }
+  /* Загрузка: глянцевое стекло нулевых и круглые кнопки под большой палец */
+  .loadBox { padding: 10px; border-radius: 26px; background: linear-gradient(180deg, #f4fdff, #9fe3ff 60%, #2f9be0); box-shadow: inset 0 2px 0 #fff, 0 0 0 2px rgba(255, 255, 255, .7), 0 24px 70px rgba(0, 0, 0, .5); }
+  .loadCv { max-height: calc(100vh - 186px); border-radius: 18px; }
+  .loadPad { display: flex; gap: 10px; margin-top: 10px; }
+  .loadPad button { flex: 1; height: 54px; border-radius: 27px; background: linear-gradient(180deg, #fff, #bfe9ff 55%, #6cc6f2); color: #0b3a66; font: 700 26px var(--sans); box-shadow: inset 0 1px 0 #fff, 0 3px 0 #2f86c4, 0 6px 12px rgba(0, 0, 0, .25); touch-action: none; }
+  .loadPad button:active { transform: translateY(2px); box-shadow: inset 0 1px 0 #fff, 0 1px 0 #2f86c4; }
+  @media (max-width: 760px) {
+    .pinRoom { flex-direction: column; gap: 12px; }
+    .pinSide { flex: none; width: min(100%, 300px); }
+    .pinSide .arcTip { display: none; }
+    .table { max-height: calc(100vh - 290px); }
+    .pocketPad { padding-top: 12px; }
+    .dpad { transform: scale(.9); transform-origin: left center; }
+  }
+
+  #pick { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; padding: 56px var(--gut-r) calc(env(safe-area-inset-bottom, 0px) + 20px) var(--gut-l); text-align: center; background: linear-gradient(to top, rgba(5, 6, 8, .94) 55%, transparent); }
+  #pickT { margin: 0 0 12px; font-weight: 600; font-size: 20px; }
+  #pickRow { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 14px; }
+  #pickRow button { min-height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid var(--line); background: var(--glass); font-size: 14px; }
+  #pickRow button.lock { opacity: .45; border-style: dashed; }
+  #pickRow button.lock::after { content: ' · закрыт'; font-size: 12px; }
+  #pickRow button[aria-pressed="true"] { background: #84bd2c; border-color: #84bd2c; color: #10160a; font-weight: 600; }
+
+  /* Вид работы: подпись под картиной, сама сцена остаётся видна */
+  #focus { position: fixed; inset: 0; z-index: 6; background: radial-gradient(ellipse 48% 56% at 50% 38%, transparent 62%, rgba(5, 6, 8, .84) 100%), linear-gradient(to top, rgba(5, 6, 8, .94), rgba(5, 6, 8, .5) 32%, rgba(5, 6, 8, .08) 55%); -webkit-user-select: text; user-select: text; animation: rise .5s both; }
+  @keyframes rise { from { opacity: 0; } }
+  body.focusing #top, body.focusing #tools, body.focusing #palette, body.focusing #hint, body.focusing #cap { visibility: hidden; }
+  #fClose { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 12px); right: var(--gut-r); width: 46px; height: 46px; }
+  #fMain { position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); transform: translateX(-50%); width: min(560px, calc(100vw - 32px)); text-align: center; }
+  #fT { margin: 0 0 8px; font-weight: 600; font-size: clamp(22px, 3vw, 34px); line-height: 1.14; text-wrap: balance; }
+  #fD { margin: 0 0 6px; font-size: 16px; line-height: 1.4; font-weight: 300; color: #c6c6c8; text-wrap: pretty; }
+  #fM { margin: 0 0 18px; font: 400 12px var(--mono); color: var(--dim); }
+  .pill { min-height: 46px; padding: 0 26px; background: #fff; color: #111; border-radius: 23px; font-size: 15px; font-weight: 600; }
+  #fForm { max-width: 340px; margin: auto; }
+  #fWho { position: absolute; left: var(--gut-l); bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); display: flex; gap: 10px; }
+  .chip { display: block; min-width: 96px; max-width: 200px; padding: 8px 18px; border: 1px solid var(--line); border-radius: 26px; font-size: 14px; }
+  .chip small { display: block; font-size: 12px; color: var(--dim); }
+  #fLog { position: absolute; right: var(--gut-r); bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); margin: 0; padding: 0; list-style: none; width: 220px; }
+  #fLog li { padding: 8px 0; font-size: 13px; }
+  #fLog b { display: block; font-weight: 500; }
+  #fLog span { color: var(--dim); font-size: 12px; }
+  .btn.alt { background: none; color: var(--paper); border: 1px solid var(--line); }
+  .btn.on { background: #ffb35a; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .memeCv { width: 100%; display: block; margin-bottom: 8px; }
+  .mapCv { width: 100%; display: block; margin-bottom: 18px; cursor: pointer; }
+  .finds { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
+  .find { font-size: 13px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; display: flex; gap: 8px; align-items: center; min-width: 0; }
+  .find i { font: 500 12px var(--mono); font-style: normal; flex: none; }
+  .find.off { color: var(--dim); }
+  #sClose { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 12px); right: var(--gut-r); width: 46px; height: 46px; z-index: 7; }
+
+  /* Вход и подписка: экран поверх всего, пока сервер не пустит в музей */
+  #gate { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 24px var(--gut-r) 24px var(--gut-l); background: radial-gradient(ellipse 70% 60% at 50% 40%, #14161b, var(--void)); text-align: center; }
+  #gate[hidden] { display: none; }
+  #gate.over { background: rgba(5, 6, 8, .58); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); animation: rise .6s ease-out; }
+  #gBox { width: min(420px, 100%); }
+  #gBox .eye { margin: 0 0 18px; font: 500 12px var(--mono); letter-spacing: .18em; color: #84bd2c; }
+  #gT { margin: 0 0 10px; font-weight: 700; font-size: clamp(26px, 6vw, 34px); line-height: 1.12; text-wrap: balance; }
+  #gD { margin: 0 0 22px; font-size: 16px; line-height: 1.45; font-weight: 300; color: #c6c6c8; text-wrap: pretty; }
+  #gD:empty { display: none; }
+  #gAct { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  #gAct .pill { min-width: 220px; }
+  .pill.alt { background: none; color: var(--paper); border: 1px solid var(--line); }
+  #gN { margin: 16px 0 0; font-size: 13px; line-height: 1.4; color: #ffb35a; }
+  .pill.tg { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: #2aabee; color: #fff; }
+  .pill.tg::before { content: ""; width: 20px; height: 20px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23fff' d='M21.4 4.3 2.9 11.4c-1.3.5-1.2 1.2-.2 1.5l4.7 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.5l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.5-1.9-1.4-1.4ZM9.7 14.4l-.4 4 -1.4-4.4 10.4-6.6Z'/%3E%3C/svg%3E") center / contain no-repeat; }
+  .pill:disabled { opacity: .55; }
+  .gHint { max-width: 320px; margin: 6px 0 0; font-size: 13px; line-height: 1.45; color: var(--dim); text-wrap: pretty; }
+  #who { max-width: 46vw; padding: 9px 16px; border-radius: 24px; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--glass); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border: 1px solid var(--line); }
+  #who[hidden] { display: none; }
+
+  /* Таблица лидеров под автоматом */
+  .lb { max-width: 440px; margin: 18px auto 0; padding: 16px 18px; border-radius: 18px; background: rgba(16, 17, 21, .78); border: 1px solid var(--line); -webkit-user-select: text; user-select: text; }
+  .lb h3 { margin: 0 0 8px; font: 500 12px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+  .lb ol { margin: 0; padding: 0; list-style: none; }
+  .lb li { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; font-size: 14px; border-top: 1px solid rgba(236, 233, 226, .07); }
+  .lb li:first-child { border-top: 0; }
+  .lb li.me { color: #84ff5a; }
+  .lbN { width: 22px; flex: none; font: 400 12px var(--mono); color: var(--dim); }
+  .lbW { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb b { font: 500 13px var(--mono); }
+  .lbEmpty { color: var(--dim); }
+  .lbMe { margin: 8px 0 0; font-size: 13px; color: var(--dim); }
+  .lbMe:empty { display: none; }
+
+  @media (max-width: 1180px) {
+    #fLog { display: none; }
+    #fWho { left: 50%; transform: translateX(-50%); bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 66px); width: max-content; }
+  }
+  @media (max-width: 720px) {
+    #sheet { place-items: start center; }
+    #sBody.panel { padding: 22px; }
+    #say { bottom: calc(env(safe-area-inset-bottom, 0px) + 158px); }
+    #fWho { left: var(--gut-l); transform: none; top: calc(env(safe-area-inset-top, 0px) + 12px); width: auto; max-width: calc(100vw - 92px); }
+    .chip { min-width: 0; padding: 6px 14px; font-size: 13px; }
+  }
+</style>
+
+<canvas id="view" aria-label="Цифровой музей: залы с развилками, вид от первого лица"></canvas>
+<div id="vig"></div>
+<div id="fade"></div>
+<div id="loading">Открываем зал</div>
+
+<div id="top" class="hud">
+  <div id="mark">NETIZEN LAB<span id="hallName"></span></div>
+  <button id="who" type="button" aria-label="Профиль: выйти или сменить" hidden></button>
+</div>
+
+<div id="hint">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9l11 4-5 2-2 5zM4 4l2.500 2.500M9 3v3M3 9h3"/></svg>
+  <span id="hintT">Нажми, чтобы идти</span>
+  <button id="hintX" aria-label="Скрыть подсказку"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+</div>
+<div id="toast" role="status"></div>
+<div id="cross" aria-hidden="true"></div>
+<div id="lookTip" hidden><i></i>Нажми, чтобы свободно осматриваться</div>
+<div id="lockBar">Нажми, чтобы идти туда, куда смотришь, а Esc вернёт курсор</div>
+<div id="px" hidden role="dialog" aria-label="Общая стена">
+  <div id="pxTop"><div><b>Общая стена</b><span id="pxInfo"></span></div><button id="pxX" aria-label="Закрыть">×</button></div>
+  <canvas id="pxCv"></canvas>
+  <div id="pxZoom"><button id="pxIn" aria-label="Крупнее">+</button><button id="pxOut" aria-label="Мельче">−</button></div>
+  <div id="pxBar"><p id="pxHint"></p><div id="pxPal"></div><button id="pxGo">Поставить</button></div>
+</div>
+<div id="say" aria-live="polite"><span id="sayName"></span><span id="sayLine"></span></div>
+<button id="cap" class="hud"><span id="capT"></span><span id="capA"></span></button>
+
+<div id="palette" class="hud" hidden>
+  <button data-c="#e8352e" aria-label="Красный" aria-pressed="true"></button>
+  <button data-c="#ffd23f" aria-label="Жёлтый" aria-pressed="false"></button>
+  <button data-c="#2f5bff" aria-label="Синий" aria-pressed="false"></button>
+  <button data-c="#17171a" aria-label="Чёрный" aria-pressed="false"></button>
+  <button data-c="#f4f2ec" aria-label="Белый" aria-pressed="false"></button>
+  <button class="rub" aria-label="Стереть" aria-pressed="false"></button>
+</div>
+<div id="tools" class="hud">
+  <button id="snd" class="round" aria-pressed="true" aria-label="Выключить звук"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.500v5h4l5 4v-13l-5 4z"/><path class="wave" d="M16.500 9a4 4 0 0 1 0 6M19 6.500a8 8 0 0 1 0 11"/><path class="mute" d="M16.500 9.500l5 5M21.500 9.500l-5 5"/></svg></button>
+  <button id="draw" class="round" aria-pressed="false" aria-label="Рисовать на стене"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.500 5.500l4 4L9 19l-5 1 1-5zM12.500 7.500l4 4"/></svg></button>
+  <button id="skinBtn" class="round" aria-label="Сменить аватар"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3l12 8-5 1.500L16 20l-3 1-3-7.500L6 17z"/></svg></button>
+  <button id="mapBtn" class="round" aria-label="Карта"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4L3.500 6v14L9 18l6 2 5.500-2V4L15 6zM9 4v14M15 6v14"/></svg><span id="mapN">0</span></button>
+</div>
+
+<div id="focus" hidden>
+  <button id="fClose" class="round" aria-label="Закрыть работу"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <div id="fWho"><span class="chip"><small>Автор</small><span id="fA"></span></span><span class="chip"><small>Зал</small><span id="fH"></span></span></div>
+  <div id="fMain">
+    <h2 id="fT"></h2>
+    <p id="fD"></p>
+    <p id="fM"></p>
+    <button id="fWord" class="pill">Оставить слово</button>
+    <form id="fForm" class="field" hidden><input id="fIn" maxlength="16" placeholder="Одно слово об этой работе" autocomplete="off" aria-label="Одно слово об этой работе"><button class="btn" type="submit">Оставить</button></form>
+  </div>
+  <ul id="fLog" aria-label="Следы посетителей"></ul>
+</div>
+
+<div id="pick" hidden>
+  <p id="pickT">Выбери, кем войти в музей</p>
+  <div id="pickRow"></div>
+  <button id="pickGo" class="pill">Войти</button>
+</div>
+
+<div id="sheet" hidden>
+  <div id="sBody"></div>
+  <button id="sClose" class="round" aria-label="Закрыть"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+</div>
+
+<div id="gate" hidden>
+  <div id="gBox">
+    <p class="eye">NETIZEN LAB</p>
+    <h2 id="gT"></h2>
+    <p id="gD"></p>
+    <div id="gAct"></div>
+    <p id="gN" hidden></p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
+<script src="museum/core.js?v=59439c39"></script>
+<script src="museum/config.js?v=d65a02b7"></script>
+<script src="museum/net.js?v=7467bca6"></script>
+<script src="museum/art.js?v=26c8f211"></script>
+<script src="museum/skins.js?v=e4cf96b8"></script>
+<script src="museum/meme-art.js?v=3103864d"></script>
+<script src="museum/arcade.js?v=5cf4be41"></script>
+<script src="museum/halls.js?v=f3415ce1"></script>
+<script src="museum/backrooms.js?v=4aa5a701"></script>
+<script src="museum/world.js?v=830cc033"></script>
+<script src="museum/avatars.js?v=287371e0"></script>
+<script src="museum/live.js?v=f7c0c36e"></script>
+<script src="museum/banana.js?v=b95c7d0e"></script>
+<script src="museum/pixels.js?v=7431dfe0"></script>
+<script>
+  (async function () {
+    // Пока грузятся шрифты, сервер проверяет вход и подписку. Без сервера ворота сразу открыты.
+    const gate = Net.enter();
+    const fonts = ['400 20px "Feature Mono"', '500 20px "Feature Mono"', '700 20px "Feature Mono"', '700 40px Geologica', '300 40px Geologica', '400 40px Geologica', '600 40px Geologica', '800 40px Geologica', '900 40px Geologica', '400 20px "JetBrains Mono"', '500 20px "JetBrains Mono"', '10px "Pixelify Sans"'];
+    await Promise.race([
+      Promise.all(fonts.map(f => document.fonts.load(f, 'Кэш abc').catch(() => null))),
+      new Promise(r => setTimeout(r, 2500))
+    ]);
+    await gate;
+    const s = document.createElement('script');
+    s.src = 'museum/app.js';
+    s.onload = () => Museum.boot();
+    document.body.appendChild(s);
+  })();
+</script>
+</body></html>
